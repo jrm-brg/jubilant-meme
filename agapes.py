@@ -5,7 +5,7 @@ from datetime import datetime
 
 # Configuration de la page
 st.set_page_config(page_title="Gestion des Agapes", layout="wide")
-st.title("🍽️ Gestionnaire Évolué des Agapes")
+st.title("🍽️ Gestion des Agapes")
 
 LOCAL_CSV = "Tableau de Loge - Contacts.csv"
 HISTORIQUE_CSV = "historique_agapes.csv"
