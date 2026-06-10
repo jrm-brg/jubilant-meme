@@ -66,27 +66,48 @@ st.sidebar.header("👤 1 - Ajouter un contact")
 with st.sidebar.form(key="add_form", clear_on_submit=True):
     new_nom = st.text_input("Nom")
     new_prenom = st.text_input("Prénom")
-    new_ville = st.text_input("Ville (optionnel)")
-    new_tel = st.text_input("Portable")
-    new_email = st.text_input("Email")
+    
+    # Case à cocher pour basculer l'affichage du formulaire
+    est_visiteur = st.checkbox("👤 Cette personne est un Visiteur")
+    
+    # 🌟 MODIFICATION DYNAMIQUE : Champs conditionnels selon le type de personne
+    if est_visiteur:
+        new_association = st.text_input("Nom de son association / loge")
+        new_ville = ""
+        new_tel = ""
+        new_email = ""
+    else:
+        new_association = ""
+        new_ville = st.text_input("Ville (optionnel)")
+        new_tel = st.text_input("Portable")
+        new_email = st.text_input("Email")
+        
     submit_button = st.form_submit_button(label="Ajouter à la base")
 
     if submit_button:
         if new_nom and new_prenom:
-            new_no = int(df_contacts["N°"].max() + 1) if not df_contacts.empty else 1
-            nom_complet = f"{new_nom.upper()} {new_prenom}"
-            
-            new_row = {
-                "N°": new_no, "Nom & Prénom": nom_complet, 
-                "Portable": new_tel, "Email": new_email
-            }
-            if "Ville" in df_contacts.columns:
-                new_row["Ville"] = new_ville.upper()
+            if est_visiteur and not new_association:
+                st.sidebar.error("Le nom de l'association est obligatoire pour un visiteur.")
+            else:
+                new_no = int(df_contacts["N°"].max() + 1) if not df_contacts.empty else 1
+                
+                # Formatage personnalisé pour le visiteur
+                if est_visiteur:
+                    nom_complet = f"{new_nom.upper()} {new_prenom} ({new_association})"
+                else:
+                    nom_complet = f"{new_nom.upper()} {new_prenom}"
+                
+                new_row = {
+                    "N°": new_no, "Nom & Prénom": nom_complet, 
+                    "Portable": new_tel, "Email": new_email
+                }
+                if "Ville" in df_contacts.columns:
+                    new_row["Ville"] = new_ville.upper() if new_ville else "—"
 
-            df_contacts = pd.concat([df_contacts, pd.DataFrame([new_row])], ignore_index=True)
-            df_contacts.to_csv(LOCAL_CSV, index=False)
-            st.sidebar.success(f"✅ {nom_complet} ajouté !")
-            st.rerun()
+                df_contacts = pd.concat([df_contacts, pd.DataFrame([new_row])], ignore_index=True)
+                df_contacts.to_csv(LOCAL_CSV, index=False)
+                st.sidebar.success(f"✅ {nom_complet} ajouté !")
+                st.rerun()
         else:
             st.sidebar.error("Le Nom et le Prénom sont obligatoires.")
 
@@ -197,15 +218,12 @@ with col3:
     st.metric("Règlements Reçus", f"{nb_paye} / {nb_presents}")
 
 
-# --- 🚨 NOUVELLE SECTION : SAUVEGARDE ET TÉLÉCHARGEMENT SECURISE 🚨 ---
+# --- SAUVEGARDE ET TÉLÉCHARGEMENT ---
 st.write("---")
 st.subheader("💾 Sauvegarde & Sécurité des données")
-st.info("Pensez à télécharger vos fichiers ci-dessous à la fin de vos séances pour conserver une copie définitive sur votre ordinateur ou smartphone.")
-
 col_down1, col_down2 = st.columns(2)
 
 with col_down1:
-    # Bouton pour télécharger l'historique complet de toutes les dates
     csv_historique = df_hist.to_csv(index=False).encode('utf-8')
     st.download_button(
         label="📥 Télécharger l'Historique des Agapes (.csv)",
@@ -216,7 +234,6 @@ with col_down1:
     )
 
 with col_down2:
-    # Bouton pour récupérer le fichier de contact (si de nouveaux membres ont été ajoutés)
     csv_contacts = df_contacts.to_csv(index=False).encode('utf-8')
     st.download_button(
         label="📥 Télécharger le Fichier Contacts à jour (.csv)",
