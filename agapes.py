@@ -5,7 +5,7 @@ from datetime import datetime
 
 # Configuration de la page
 st.set_page_config(page_title="Gestion des Agapes", layout="wide")
-st.title("🍽️ Gestion des Agapes")
+st.title("🍽️ Gestionnaire Évolué des Agapes")
 
 LOCAL_CSV = "Tableau de Loge - Contacts.csv"
 HISTORIQUE_CSV = "historique_agapes.csv"
@@ -25,7 +25,6 @@ else:
 # --- 🛠️ NETTOYAGE ET HARMONISATION DES COLONNES ---
 df_contacts.columns = df_contacts.columns.str.strip()
 
-# Détection et renommage automatique
 rename_dict = {}
 for col in df_contacts.columns:
     col_clean = col.lower().replace("é", "e").replace("û", "u").replace("°", "").replace(" ", "")
@@ -40,16 +39,13 @@ for col in df_contacts.columns:
 
 df_contacts = df_contacts.rename(columns=rename_dict)
 
-# Sécurités indispensables
 if "N°" not in df_contacts.columns:
     df_contacts.insert(0, "N°", range(1, len(df_contacts) + 1))
 
 if "Nom & Prénom" not in df_contacts.columns:
-    st.error("🚨 La colonne 'Nom & Prénom' est introuvable. Vérifiez l'entête de votre fichier CSV.")
-    st.write("Colonnes détectées actuellement :", list(df_contacts.columns))
+    st.error("🚨 La colonne 'Nom & Prénom' est introuvable. Vérifiez votre fichier CSV.")
     st.stop()
 
-# Nettoyage des anciennes colonnes si présentes
 for col in ["Présent", "Règlement Validé", "Responsable Agapes"]:
     if col in df_contacts.columns:
         df_contacts = df_contacts.drop(columns=[col])
@@ -60,7 +56,6 @@ if os.path.exists(HISTORIQUE_CSV):
 else:
     df_hist = pd.DataFrame(columns=["Date", "N°", "Présent", "Responsable", "Payé"])
 
-# Alignement des types
 df_contacts["N°"] = df_contacts["N°"].astype(int)
 if not df_hist.empty:
     df_hist["N°"] = df_hist["N°"].astype(int)
@@ -85,7 +80,6 @@ with st.sidebar.form(key="add_form", clear_on_submit=True):
                 "N°": new_no, "Nom & Prénom": nom_complet, 
                 "Portable": new_tel, "Email": new_email
             }
-            # Conserver la colonne Ville dans le CSV d'origine si elle existait déjà
             if "Ville" in df_contacts.columns:
                 new_row["Ville"] = new_ville.upper()
 
@@ -118,9 +112,7 @@ if df_date_reunion.empty:
         initial_rows.append({"Date": date_selectionnee, "N°": int(row["N°"]), "Présent": False, "Responsable": False, "Payé": False})
     df_date_reunion = pd.DataFrame(initial_rows)
 
-# Fusion basée uniquement sur "N°" et "Nom & Prénom" (La ville est ignorée pour l'affichage)
 df_mapping = pd.merge(df_contacts[["N°", "Nom & Prénom"]], df_date_reunion, on="N°", how="left")
-
 df_mapping["Présent"] = df_mapping["Présent"].fillna(False).astype(bool)
 df_mapping["Responsable"] = df_mapping["Responsable"].fillna(False).astype(bool)
 df_mapping["Payé"] = df_mapping["Payé"].fillna(False).astype(bool)
@@ -181,13 +173,10 @@ with onglet2:
 st.write("---")
 if st.button("💾 ENREGISTRER TOUT POUR CETTE DATE", type="primary", use_container_width=True):
     df_to_save = edited_presents[["Date", "N°", "Présent", "Responsable", "Payé"]]
-    
     if not df_hist.empty:
         df_hist = df_hist[df_hist["Date"] != date_selectionnee]
-        
     df_hist = pd.concat([df_hist, df_to_save], ignore_index=True)
     df_hist.to_csv(HISTORIQUE_CSV, index=False)
-    
     st.success(f"✅ Données du {date_selectionnee} sauvegardées avec succès !")
     st.rerun()
 
@@ -206,3 +195,33 @@ with col2:
 with col3:
     nb_paye = edited_presents[(edited_presents["Présent"] == True) & (edited_presents["Payé"] == True)].shape[0]
     st.metric("Règlements Reçus", f"{nb_paye} / {nb_presents}")
+
+
+# --- 🚨 NOUVELLE SECTION : SAUVEGARDE ET TÉLÉCHARGEMENT SECURISE 🚨 ---
+st.write("---")
+st.subheader("💾 Sauvegarde & Sécurité des données")
+st.info("Pensez à télécharger vos fichiers ci-dessous à la fin de vos séances pour conserver une copie définitive sur votre ordinateur ou smartphone.")
+
+col_down1, col_down2 = st.columns(2)
+
+with col_down1:
+    # Bouton pour télécharger l'historique complet de toutes les dates
+    csv_historique = df_hist.to_csv(index=False).encode('utf-8')
+    st.download_button(
+        label="📥 Télécharger l'Historique des Agapes (.csv)",
+        data=csv_historique,
+        file_name=f"historique_agapes_maj_{datetime.now().strftime('%Y%m%d')}.csv",
+        mime="text/csv",
+        use_container_width=True
+    )
+
+with col_down2:
+    # Bouton pour récupérer le fichier de contact (si de nouveaux membres ont été ajoutés)
+    csv_contacts = df_contacts.to_csv(index=False).encode('utf-8')
+    st.download_button(
+        label="📥 Télécharger le Fichier Contacts à jour (.csv)",
+        data=csv_contacts,
+        file_name="Tableau de Loge - Contacts.csv",
+        mime="text/csv",
+        use_container_width=True
+    )
