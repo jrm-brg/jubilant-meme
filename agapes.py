@@ -11,13 +11,17 @@ LOCAL_CSV = "Tableau de Loge - Contacts.csv"
 GOOGLE_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTFcguChCFkKz3hLvlSmMdDgVR8WEf3XUI1DWmNGMNXL3N_qN3ErV0X3BEVpZ9xYuMPdYJn-7SBcP94/pub?gid=355758587&single=true&output=csv"
 
 # 1. Chargement et harmonisation du fichier des contacts de base (Lecture seule)
-if os.path.exists(LOCAL_CSV):
-    df_contacts = pd.read_csv(LOCAL_CSV)
-else:
-    try:
-        df_contacts = pd.read_csv(GOOGLE_CSV_URL)
-        df_contacts.to_csv(LOCAL_CSV, index=False)
-    except Exception as e:
+# 1. Chargement du fichier des contacts depuis GitHub (Lecture seule et mise à jour dynamique)
+URL_RAW_GITHUB = "https://raw.githubusercontent.com/jrm-brg/Agapes/main/Tableau%20de%20Loge%20-%20Contacts.csv"
+
+try:
+    # L'application va maintenant lire le fichier directement sur votre GitHub à chaque rafraîchissement
+    df_contacts = pd.read_csv(URL_RAW_GITHUB)
+except Exception as e:
+    # Si GitHub est inaccessible, on utilise la copie locale par sécurité
+    if os.path.exists(LOCAL_CSV):
+        df_contacts = pd.read_csv(LOCAL_CSV)
+    else:
         st.error(f"Erreur de chargement initial : {e}")
         st.stop()
 
