@@ -7,187 +7,236 @@ from datetime import datetime
 
 # Configuration de la page
 st.set_page_config(page_title="Gestion des Agapes", layout="wide")
-st.title("🍽️ Gestionnaire d'Agapes (Sauvegarde GitHub)")
+st.title("🍽️ Gestionnaire d'Agapes Évolué")
 
 LOCAL_CSV = "Tableau de Loge - Contacts.csv"
-# Lecture directe de votre fichier de contact mis à jour sur GitHub
 URL_RAW_GITHUB = "https://raw.githubusercontent.com/jrm-brg/Agapes/main/Tableau%20de%20Loge%20-%20Contacts.csv"
 
-# Configuration pour l'API GitHub (Récupération des Secrets)
 REPO_OWNER = "jrm-brg"
 REPO_NAME = "Agapes"
 try:
     GITHUB_TOKEN = st.secrets["GITHUB_TOKEN"]
 except Exception:
     GITHUB_TOKEN = None
-    st.warning("⚠️ Le Secret 'GITHUB_TOKEN' n'est pas configuré sur Streamlit Cloud. La sauvegarde automatique sur GitHub sera désactivée.")
+    st.warning("⚠️ Le Secret 'GITHUB_TOKEN' n'est pas configuré sur Streamlit Cloud.")
 
-# 1. Chargement des contacts
-try:
-    df_contacts = pd.read_csv(URL_RAW_GITHUB)
-except Exception as e:
-    if os.path.exists(LOCAL_CSV):
-        df_contacts = pd.read_csv(LOCAL_CSV)
-    else:
-        st.error(f"Erreur de chargement initial : {e}")
-        st.stop()
+# 1. Chargement des contacts de base
+@st.cache_data(ttl=60) # Rafraîchit toutes les minutes si besoin
+def charger_contacts():
+    try:
+        df = pd.read_csv(URL_RAW_GITHUB)
+    except Exception:
+        if os.path.exists(LOCAL_CSV):
+            df = pd.read_csv(LOCAL_CSV)
+        else:
+            return pd.DataFrame(columns=["N°", "Nom & Prénom"])
+    
+    df.columns = df.columns.str.strip()
+    rename_dict = {}
+    for col in df.columns:
+        col_clean = col.lower().replace("é", "e").replace("û", "u").replace("°", "").replace(" ", "")
+        if col_clean in ["n", "no", "id", "num", "numero"]:
+            rename_dict[col] = "N°"
+        elif col_clean in ["nom&prenom", "nomprenom", "identite", "membres"]:
+            rename_dict[col] = "Nom & Prénom"
+    df = df.rename(columns=rename_dict)
+    if "N°" not in df.columns:
+        df.insert(0, "N°", range(1, len(df) + 1))
+    df["N°"] = df["N°"].astype(int)
+    return df[["N°", "Nom & Prénom"]].copy()
 
-df_contacts.columns = df_contacts.columns.str.strip()
-rename_dict = {}
-for col in df_contacts.columns:
-    col_clean = col.lower().replace("é", "e").replace("û", "u").replace("°", "").replace(" ", "")
-    if col_clean in ["n", "no", "id", "num", "numero"]:
-        rename_dict[col] = "N°"
-    elif col_clean in ["nom&prenom", "nomprenom", "identite", "membres"]:
-        rename_dict[col] = "Nom & Prénom"
+df_membres_base = charger_contacts()
 
-df_contacts = df_contacts.rename(columns=rename_dict)
-if "N°" not in df_contacts.columns:
-    df_contacts.insert(0, "N°", range(1, len(df_contacts) + 1))
-df_contacts["N°"] = df_contacts["N°"].astype(int)
-df_membres_base = df_contacts[["N°", "Nom & Prénom"]].copy()
-
-
-# --- FONCTION DE SAUVEGARDE DIRECTE SUR GITHUB ---
+# --- FONCTION GITHUB API ---
 def sauvegarder_sur_github(nom_fichier, dataframe):
     if not GITHUB_TOKEN:
-        st.error("Impossible de sauvegarder : Clé GitHub manquante dans les Secrets.")
+        st.error("Jeton GitHub manquant dans les Secrets.")
         return False
-    
     url = f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/contents/{nom_fichier}"
-    headers = {
-        "Authorization": f"token {GITHUB_TOKEN}",
-        "Accept": "application/vnd.github.v3+json"
-    }
-    
-    content_csv = dataframe.to_csv(index=False)
-    content_bytes = content_csv.encode("utf-8")
-    content_b64 = base64.b64encode(content_bytes).decode("utf-8")
-    
-    # Étape A : Vérifier si le fichier existe déjà pour obtenir son identifiant unique (SHA)
+    headers = {"Authorization": f"token {GITHUB_TOKEN}", "Accept": "application/vnd.github.v3+json"}
+    content_b64 = base64.b64encode(dataframe.to_csv(index=False).encode("utf-8")).decode("utf-8")
     sha = None
-    reponse_get = requests.get(url, headers=headers)
-    if reponse_get.status_code == 200:
-        sha = reponse_get.json().get("sha")
-        
-    # Étape B : Envoyer ou mettre à jour le fichier
-    data = {
-        "message": f"Mise à jour automatique : {nom_fichier} via l'application iPhone",
-        "content": content_b64
-    }
-    if sha:
-        data["sha"] = sha
-        
-    reponse_put = requests.put(url, headers=headers, json=data)
-    if reponse_put.status_code in [200, 201]:
-        return True
-    else:
-        st.error(f"Erreur GitHub API : {reponse_put.json().get('message')}")
-        return False
+    res_get = requests.get(url, headers=headers)
+    if res_get.status_code == 200:
+        sha = res_get.json().get("sha")
+    data = {"message": f"Mise à jour : {nom_fichier}", "content": content_b64}
+    if sha: data["sha"] = sha
+    res_put = requests.put(url, headers=headers, json=data)
+    return res_put.status_code in [200, 201]
 
+def lister_fichiers_agapes_github():
+    if not GITHUB_TOKEN: return []
+    url = f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/contents/"
+    headers = {"Authorization": f"token {GITHUB_TOKEN}", "Accept": "application/vnd.github.v3+json"}
+    try:
+        res = requests.get(url, headers=headers)
+        if res.status_code == 200:
+            fichiers = [f["name"] for f in res.json() if f["name"].startswith("Agape_") and f["name"].endswith(".csv")]
+            return fichiers
+    except Exception:
+        pass
+    return []
 
-# --- MENU LATÉRAL : DATE & VISITEURS ---
+# --- MENU LATÉRAL ---
 st.sidebar.header("📅 1 - Choisir la Date")
 nouvelle_date = st.sidebar.date_input("Sélectionner une date :", datetime.now())
-date_str = nouvelle_date.strftime("%d_%m_%Y")
-date_affichage = nouvelle_date.strftime("%d/%m/%Y")
+date_str = nouvelle_date.strftime("%d/%m/%Y")
+file_date_str = nouvelle_date.strftime("%d_%m_%Y")
+FICHIER_AGAPE = f"Agape_{file_date_str}.csv"
 
-FICHIER_AGAPE = f"Agape_{date_str}.csv"
-
-# Tentative de récupération du fichier de la soirée (depuis GitHub en priorité si existant)
-if f"df_cache_{date_str}" not in st.session_state:
-    url_fichier_soir = f"https://raw.githubusercontent.com/{REPO_OWNER}/{REPO_NAME}/main/{FICHIER_AGAPE}"
+# Chargement des données de la session en cours
+if f"df_{file_date_str}" not in st.session_state:
+    url_file = f"https://raw.githubusercontent.com/{REPO_OWNER}/{REPO_NAME}/main/{FICHIER_AGAPE}"
     try:
-        res = requests.get(url_fichier_soir)
+        res = requests.get(url_file)
         if res.status_code == 200:
-            st.session_state[f"df_cache_{date_str}"] = pd.read_csv(url_fichier_soir)
+            st.session_state[f"df_{file_date_str}"] = pd.read_csv(url_file)
         else:
-            initial_rows = [{"N°": int(row["N°"]), "Nom & Prénom": row["Nom & Prénom"], "Présent": False, "Responsable": False, "Payé": False} for _, row in df_membres_base.iterrows()]
-            st.session_state[f"df_cache_{date_str}"] = pd.DataFrame(initial_rows)
+            rows = [{"N°": int(r["N°"]), "Nom & Prénom": r["Nom & Prénom"], "Présent": False, "Responsable": False, "Payé": False} for _, r in df_membres_base.iterrows()]
+            st.session_state[f"df_{file_date_str}"] = pd.DataFrame(rows)
     except Exception:
-        initial_rows = [{"N°": int(row["N°"]), "Nom & Prénom": row["Nom & Prénom"], "Présent": False, "Responsable": False, "Payé": False} for _, row in df_membres_base.iterrows()]
-        st.session_state[f"df_cache_{date_str}"] = pd.DataFrame(initial_rows)
+        rows = [{"N°": int(r["N°"]), "Nom & Prénom": r["Nom & Prénom"], "Présent": False, "Responsable": False, "Payé": False} for _, r in df_membres_base.iterrows()]
+        st.session_state[f"df_{file_date_str}"] = pd.DataFrame(rows)
 
-df_session = st.session_state[f"df_cache_{date_str}"]
+df_session = st.session_state[f"df_{file_date_str}"]
 df_session["N°"] = df_session["N°"].astype(int)
 
 st.sidebar.write("---")
 st.sidebar.header("👤 2 - Ajouter un Visiteur")
-with st.sidebar.form(key="visiteur_form", clear_on_submit=True):
+with st.sidebar.form(key="v_form", clear_on_submit=True):
     v_nom = st.text_input("Nom")
     v_prenom = st.text_input("Prénom")
     v_loge = st.text_input("Loge / Association")
     v_ville = st.text_input("Ville")
-    submit_v = st.form_submit_button("Ajouter le visiteur ce soir")
-
-    if submit_v:
+    if st.form_submit_button("Ajouter le visiteur ce soir"):
         if v_nom and v_prenom and v_loge:
             next_id = int(df_session["N°"].max() + 1) if not df_session.empty else 9000
-            identite_visiteur = f"{v_nom.upper()} {v_prenom} ({v_loge} - {v_ville if v_ville else '—'})"
-            new_v_row = {"N°": next_id, "Nom & Prénom": identite_visiteur, "Présent": True, "Responsable": False, "Payé": False}
-            df_session = pd.concat([df_session, pd.DataFrame([new_v_row])], ignore_index=True)
-            st.session_state[f"df_cache_{date_str}"] = df_session
-            st.sidebar.success("✅ Visiteur ajouté (Pensez à enregistrer en bas) !")
+            identite = f"{v_nom.upper()} {v_prenom} ({v_loge} - {v_ville if v_ville else '—'})"
+            new_v = {"N°": next_id, "Nom & Prénom": identite, "Présent": True, "Responsable": False, "Payé": False}
+            df_session = pd.concat([df_session, pd.DataFrame([new_v])], ignore_index=True)
+            st.session_state[f"df_{file_date_str}"] = df_session
+            st.sidebar.success("✅ Visiteur ajouté (Enregistrez en bas) !")
             st.rerun()
 
 # --- INTERFACE PRINCIPALE ---
-st.header(f"🍽️ Gestion du repas du {date_affichage}")
-onglet1, onglet2 = st.tabs(["👥 1. Présences & Responsables", "💶 2. Règlements (Filtré)"])
+onglet1, onglet2, onglet3 = st.tabs(["👥 1. Pointage Inscriptions", "💶 2. Règlements", "📊 3. Historique Général"])
 
+# --- ONGLET 1 : POINTAGE (FILTRÉ : Uniquement les non-cochés) ---
 with onglet1:
-    edited_presents = st.data_editor(
-        df_session,
-        column_config={
-            "N°": st.column_config.NumberColumn(disabled=True),
-            "Nom & Prénom": st.column_config.TextColumn("Nom & Prénom", disabled=True),
-            "Présent": st.column_config.CheckboxColumn("👍 Présent(e)"),
-            "Responsable": st.column_config.CheckboxColumn("🍳 Responsable Agape"),
-            "Payé": st.column_config.CheckboxColumn("💶 Payé", disabled=True)
-        },
-        disabled=["N°", "Nom & Prénom"], hide_index=True, key=f"editor_p_{date_str}", use_container_width=True
-    )
-
-with onglet2:
-    df_presents_uniquement = edited_presents[edited_presents["Présent"] == True]
-    if df_presents_uniquement.empty:
-        st.warning("⚠️ Cochez d'abord des personnes présentes dans le premier onglet.")
+    st.header(f"Pointage des présents pour le {date_str}")
+    df_non_pointes = df_session[df_session["Présent"] == False]
+    
+    if df_non_pointes.empty:
+        st.success("🎉 Tout le monde a été pointé présent ou absent pour cette date !")
     else:
-        edited_compta = st.data_editor(
-            df_presents_uniquement,
+        st.caption(f"Il reste {len(df_non_pointes)} personnes à pointer.")
+        edited_p = st.data_editor(
+            df_non_pointes,
             column_config={
                 "N°": st.column_config.NumberColumn(disabled=True),
                 "Nom & Prénom": st.column_config.TextColumn("Nom & Prénom", disabled=True),
-                "Présent": None, "Responsable": st.column_config.CheckboxColumn("🍳 Responsable", disabled=True),
+                "Présent": st.column_config.CheckboxColumn("👍 Présent(e)"),
+                "Responsable": st.column_config.CheckboxColumn("🍳 Responsable"),
+                "Payé": None
+            },
+            disabled=["N°", "Nom & Prénom"], hide_index=True, key=f"ed_p_{file_date_str}", use_container_width=True
+        )
+        
+        # Répercuter les changements immédiats dans le state principal
+        for _, row in edited_p.iterrows():
+            if row["Présent"] or row["Responsable"]:
+                df_session.loc[df_session["N°"] == row["N°"], "Présent"] = row["Présent"]
+                df_session.loc[df_session["N°"] == row["N°"], "Responsable"] = row["Responsable"]
+                st.session_state[f"df_{file_date_str}"] = df_session
+                st.rerun()
+
+# --- ONGLET 2 : RÈGLEMENTS (FILTRÉ : Uniquement les présents) ---
+with onglet2:
+    st.header(f"Règlements du {date_str}")
+    df_presents = df_session[df_session["Présent"] == True]
+    
+    if df_presents.empty:
+        st.info("⚠️ En attente de pointage dans le premier onglet pour voir apparaître les personnes ici.")
+    else:
+        nb_non_payes = df_presents[df_presents["Payé"] == False].shape[0]
+        if nb_non_payes == 0:
+            st.success("✅ Tous les présents de ce soir ont payé !")
+        else:
+            st.warning(f"💶 {nb_non_payes} règlements restants à percevoir.")
+
+        edited_c = st.data_editor(
+            df_presents,
+            column_config={
+                "N°": st.column_config.NumberColumn(disabled=True),
+                "Nom & Prénom": st.column_config.TextColumn("Nom & Prénom", disabled=True),
+                "Présent": None,
+                "Responsable": st.column_config.CheckboxColumn("🍳 Resp.", disabled=True),
                 "Payé": st.column_config.CheckboxColumn("💶 Règlement Validé")
             },
-            disabled=["N°", "Nom & Prénom"], hide_index=True, key=f"editor_c_{date_str}", use_container_width=True
+            disabled=["N°", "Nom & Prénom"], hide_index=True, key=f"ed_c_{file_date_str}", use_container_width=True
         )
-        for _, row in edited_compta.iterrows():
-            edited_presents.loc[edited_presents["N°"] == row["N°"], "Payé"] = row["Payé"]
+        
+        for _, row in edited_c.iterrows():
+            df_session.loc[df_session["N°"] == row["N°"], "Payé"] = row["Payé"]
+        st.session_state[f"df_{file_date_str}"] = df_session
 
-st.session_state[f"df_cache_{date_str}"] = edited_presents
-
-# --- 🚀 BOUTON ENREGISTRER DIRECTEMENT SUR GITHUB 🚀 ---
+# --- SAUVEGARDE EN BAS POUR LA REUNION ---
 st.write("---")
-if st.button(f"🚀 ENREGISTRER ET ENVOYER DIRECTEMENT SUR GITHUB", type="primary", use_container_width=True):
-    with st.spinner("Envoi du fichier vers GitHub en cours..."):
-        succes = sauvegarder_sur_github(FICHIER_AGAPE, edited_presents)
-        if succes:
-            st.success(f"🎉 Le fichier '{FICHIER_AGAPE}' a été enregistré et poussé avec succès sur GitHub !")
-            st.ballons()
+if st.button(f"🚀 ENREGISTRER LA SOIRÉE DU {date_str} SUR GITHUB", type="primary", use_container_width=True):
+    with st.spinner("Envoi..."):
+        if sauvegarder_sur_github(FICHIER_AGAPE, df_session):
+            st.success("🎉 Enregistré avec succès !")
+            st.balloons()
 
-# --- STATISTIQUES ---
-st.write("---")
-st.subheader("📊 Résumé du repas")
-col1, col2, col3 = st.columns(3)
-with col1:
-    nb_presents = edited_presents[edited_presents["Présent"] == True].shape[0]
-    st.metric("Total Présents", nb_presents)
-with col2:
-    resp = edited_presents[edited_presents["Responsable"] == True]
-    st.metric("Responsables", len(resp))
-    if not resp.empty:
-        st.caption(", ".join(resp["Nom & Prénom"].astype(str)))
-with col3:
-    nb_paye = edited_presents[(edited_presents["Présent"] == True) & (edited_presents["Payé"] == True)].shape[0]
-    st.metric("Règlements perçus", f"{nb_paye} / {nb_presents}")
+# --- ONGLET 3 : HISTORIQUE ET SUIVI DES IMPAYÉS ---
+with onglet3:
+    st.header("📊 Contrôle de tous les historiques d'Agapes")
+    
+    if st.button("🔄 Actualiser et Scanner tous les fichiers GitHub"):
+        st.cache_data.clear()
+        st.rerun()
+        
+    liste_fichiers = lister_fichiers_agapes_github()
+    
+    if not liste_fichiers:
+        st.info("Aucun fichier d'Agape enregistré trouvé sur GitHub pour le moment.")
+    else:
+        st.write(f"🔎 Analyse de **{len(liste_fichiers)} repas** enregistrés...")
+        
+        liste_df = []
+        for f in liste_fichiers:
+            date_f = f.replace("Agape_", "").replace(".csv", "").replace("_", "/")
+            url_f = f"https://raw.githubusercontent.com/{REPO_OWNER}/{REPO_NAME}/main/{f}"
+            try:
+                temp_df = pd.read_csv(url_f)
+                temp_df["Repas Date"] = date_f
+                liste_df.append(temp_df)
+            except Exception:
+                pass
+                
+        if liste_df:
+            df_global = pd.concat(liste_df, ignore_index=True)
+            # Filtrer pour obtenir l'historique utile
+            df_historique_total = df_global[df_global["Présent"] == True].copy()
+            
+            # Séparation en 2 sous-onglets pratiques
+            sub1, sub2 = st.tabs(["❌ Impayés à régulariser", "📋 Tout l'historique des présences"])
+            
+            with sub1:
+                df_impayes = df_historique_total[df_historique_total["Payé"] == False]
+                if df_impayes.empty:
+                    st.success("🏅 Incroyable ! Tout est à jour, aucun impayé sur l'ensemble des historiques.")
+                else:
+                    st.error(f"⚠️ Il y a actuellement {len(df_impayes)} repas non régularisés :")
+                    st.dataframe(
+                        df_impayes[["Repas Date", "Nom & Prénom", "Responsable"]],
+                        hide_index=True, use_container_width=True
+                    )
+            
+            with sub2:
+                st.write("Liste globale ordonnée par repas :")
+                st.dataframe(
+                    df_historique_total[["Repas Date", "Nom & Prénom", "Responsable", "Payé"]],
+                    column_config={"Payé": st.column_config.CheckboxColumn("Payé")},
+                    hide_index=True, use_container_width=True
+                )
