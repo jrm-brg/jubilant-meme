@@ -202,13 +202,19 @@ with onglet2:
             df_session.loc[df_session["N°"] == row["N°"], "Payé"] = row["Payé"]
         st.session_state[f"df_{file_date_str}"] = df_session
 
-# --- SAUVEGARDE EN BAS POUR LA REUNION ---
+# --- 🚀 BOUTON ENREGISTRER DIRECTEMENT SUR GITHUB 🚀 ---
 st.write("---")
-if st.button(f"🚀 ENREGISTRER LA SOIRÉE DU {date_str} SUR GITHUB", type="primary", use_container_width=True):
-    with st.spinner("Envoi..."):
-        if sauvegarder_sur_github(FICHIER_AGAPE, df_session):
-            st.success("🎉 Enregistré avec succès !")
-            st.balloons()
+try:
+    if st.button(f"🚀 ENREGISTRER LA SOIRÉE DU {date_str} SUR GITHUB", type="primary", use_container_width=True):
+        with st.spinner("Envoi du fichier vers GitHub..."):
+            succes = sauvegarder_sur_github(FICHIER_AGAPE, df_session)
+            if succes:
+                st.success(f"🎉 Enregistré avec succès sur GitHub !")
+                st.balloons()
+            else:
+                st.error("❌ GitHub a refusé l'enregistrement. Vérifiez votre GITHUB_TOKEN dans les Secrets.")
+except Exception as erreur_cachee:
+    st.error(f"💥 L'application a planté lors de l'envoi : {erreur_cachee}")
 
 # --- ONGLET 3 : HISTORIQUE ET SUIVI DES IMPAYÉS ---
 with onglet3:
