@@ -92,10 +92,10 @@ if f"df_{file_date_str}" not in st.session_state:
         if res.status_code == 200:
             st.session_state[f"df_{file_date_str}"] = pd.read_csv(url_file)
         else:
-            rows = [{"N°": int(r["N°"]), "Nom & Prénom": r["Nom & Prénom"], "Présent": False, "Responsable": False, "Payé": False} for _, r in df_membres_base.iterrows()]
+            rows = [{"N°": int(r["N°"]), "Nom & Prénom": r["Nom & Prénom"], "Présent": False, "Payé": False} for _, r in df_membres_base.iterrows()]
             st.session_state[f"df_{file_date_str}"] = pd.DataFrame(rows)
     except Exception:
-        rows = [{"N°": int(r["N°"]), "Nom & Prénom": r["Nom & Prénom"], "Présent": False, "Responsable": False, "Payé": False} for _, r in df_membres_base.iterrows()]
+        rows = [{"N°": int(r["N°"]), "Nom & Prénom": r["Nom & Prénom"], "Présent": False, "Payé": False} for _, r in df_membres_base.iterrows()]
         st.session_state[f"df_{file_date_str}"] = pd.DataFrame(rows)
 
 df_session = st.session_state[f"df_{file_date_str}"]
@@ -112,7 +112,7 @@ with st.sidebar.form(key="v_form", clear_on_submit=True):
         if v_nom and v_prenom and v_loge:
             next_id = int(df_session["N°"].max() + 1) if not df_session.empty else 9000
             identite = f"{v_nom.upper()} {v_prenom} ({v_loge} - {v_ville if v_ville else '—'})"
-            new_v = {"N°": next_id, "Nom & Prénom": identite, "Présent": True, "Responsable": False, "Payé": False}
+            new_v = {"N°": next_id, "Nom & Prénom": identite, "Présent": True, "Payé": False}
             df_session = pd.concat([df_session, pd.DataFrame([new_v])], ignore_index=True)
             st.session_state[f"df_{file_date_str}"] = df_session
             st.sidebar.success("✅ Visiteur ajouté (Enregistrez en bas) !")
@@ -125,7 +125,7 @@ onglet1, onglet2, onglet3 = st.tabs(["👥 1. Pointage Inscriptions", "💶 2. R
 with onglet1:
     st.header(f"Pointage des présents pour le {date_str}")
     
-    # 🌟 MODIFICATION : Section d'annulation d'erreur d'inscription
+    # Section d'annulation d'erreur d'inscription
     df_presents_courants = df_session[df_session["Présent"] == True]
     if not df_presents_courants.empty:
         with st.expander("⚠️ Besoin d'annuler une inscription / corriger une erreur ?"):
@@ -137,12 +137,12 @@ with onglet1:
             if st.button("❌ Retirer cette personne de la liste des présents", type="secondary"):
                 row_cible = df_session[df_session["Nom & Prénom"] == p_a_annuler].iloc[0]
                 
-                # Si c'est un visiteur (ID >= 9000), on le supprime complètement de la liste
+                # Si c'est un visiteur (ID >= 9000), on le supprime complètement
                 if int(row_cible["N°"]) >= 9000:
                     df_session = df_session[df_session["Nom & Prénom"] != p_a_annuler]
                 else:
                     # Si c'est un membre de base, on le remet à zéro (Absent, non payé)
-                    df_session.loc[df_session["Nom & Prénom"] == p_a_annuler, ["Présent", "Responsable", "Payé"]] = False
+                    df_session.loc[df_session["Nom & Prénom"] == p_a_annuler, ["Présent", "Payé"]] = False
                 
                 st.session_state[f"df_{file_date_str}"] = df_session
                 st.toast(f"🔄 Inscription annulée pour {p_a_annuler}")
@@ -161,17 +161,15 @@ with onglet1:
                 "N°": st.column_config.NumberColumn(disabled=True),
                 "Nom & Prénom": st.column_config.TextColumn("Nom & Prénom", disabled=True),
                 "Présent": st.column_config.CheckboxColumn("👍 Présent(e)"),
-                "Responsable": st.column_config.CheckboxColumn("🍳 Responsable"),
                 "Payé": None
             },
             disabled=["N°", "Nom & Prénom"], hide_index=True, key=f"ed_p_{file_date_str}", use_container_width=True
         )
         
-        # Répercuter les changements immédiats dans le state principal
+        # Répercuter les changements immédiats
         for _, row in edited_p.iterrows():
-            if row["Présent"] or row["Responsable"]:
+            if row["Présent"]:
                 df_session.loc[df_session["N°"] == row["N°"], "Présent"] = row["Présent"]
-                df_session.loc[df_session["N°"] == row["N°"], "Responsable"] = row["Responsable"]
                 st.session_state[f"df_{file_date_str}"] = df_session
                 st.rerun()
 
@@ -195,7 +193,6 @@ with onglet2:
                 "N°": st.column_config.NumberColumn(disabled=True),
                 "Nom & Prénom": st.column_config.TextColumn("Nom & Prénom", disabled=True),
                 "Présent": None,
-                "Responsable": st.column_config.CheckboxColumn("🍳 Resp.", disabled=True),
                 "Payé": st.column_config.CheckboxColumn("💶 Règlement Validé")
             },
             disabled=["N°", "Nom & Prénom"], hide_index=True, key=f"ed_c_{file_date_str}", use_container_width=True
@@ -227,39 +224,3 @@ with onglet3:
         st.info("Aucun fichier d'Agape enregistré trouvé sur GitHub pour le moment.")
     else:
         st.write(f"🔎 Analyse de **{len(liste_fichiers)} repas** enregistrés...")
-        
-        liste_df = []
-        for f in liste_fichiers:
-            date_f = f.replace("Agape_", "").replace(".csv", "").replace("_", "/")
-            url_f = f"https://raw.githubusercontent.com/{REPO_OWNER}/{REPO_NAME}/main/{f}"
-            try:
-                temp_df = pd.read_csv(url_f)
-                temp_df["Repas Date"] = date_f
-                liste_df.append(temp_df)
-            except Exception:
-                pass
-                
-        if liste_df:
-            df_global = pd.concat(liste_df, ignore_index=True)
-            df_historique_total = df_global[df_global["Présent"] == True].copy()
-            
-            sub1, sub2 = st.tabs(["❌ Impayés à régulariser", "📋 Tout l'historique des présences"])
-            
-            with sub1:
-                df_impayes = df_historique_total[df_historique_total["Payé"] == False]
-                if df_impayes.empty:
-                    st.success("🏅 Incroyable ! Tout est à jour, aucun impayé sur l'ensemble des historiques.")
-                else:
-                    st.error(f"⚠️ Il y a actuellement {len(df_impayes)} repas non régularisés :")
-                    st.dataframe(
-                        df_impayes[["Repas Date", "Nom & Prénom", "Responsable"]],
-                        hide_index=True, use_container_width=True
-                    )
-            
-            with sub2:
-                st.write("Liste globale ordonnée par repas :")
-                st.dataframe(
-                    df_historique_total[["Repas Date", "Nom & Prénom", "Responsable", "Payé"]],
-                    column_config={"Payé": st.column_config.CheckboxColumn("Payé")},
-                    hide_index=True, use_container_width=True
-                )
