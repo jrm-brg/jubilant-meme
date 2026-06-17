@@ -21,7 +21,7 @@ except Exception:
     st.warning("⚠️ Le Secret 'GITHUB_TOKEN' n'est pas configuré sur Streamlit Cloud.")
 
 # 1. Chargement des contacts de base
-@st.cache_data(ttl=60) # Rafraîchit toutes les minutes si besoin
+@st.cache_data(ttl=60)
 def charger_contacts():
     try:
         df = pd.read_csv(URL_RAW_GITHUB)
@@ -47,7 +47,7 @@ def charger_contacts():
 
 df_membres_base = charger_contacts()
 
-# --- FONCTION GITHUB API ---
+# --- FONCTIONS GITHUB API ---
 def sauvegarder_sur_github(nom_fichier, dataframe):
     if not GITHUB_TOKEN:
         st.error("Jeton GitHub manquant dans les Secrets.")
@@ -124,6 +124,31 @@ onglet1, onglet2, onglet3 = st.tabs(["👥 1. Pointage Inscriptions", "💶 2. R
 # --- ONGLET 1 : POINTAGE (FILTRÉ : Uniquement les non-cochés) ---
 with onglet1:
     st.header(f"Pointage des présents pour le {date_str}")
+    
+    # 🌟 MODIFICATION : Section d'annulation d'erreur d'inscription
+    df_presents_courants = df_session[df_session["Présent"] == True]
+    if not df_presents_courants.empty:
+        with st.expander("⚠️ Besoin d'annuler une inscription / corriger une erreur ?"):
+            p_a_annuler = st.selectbox(
+                "Sélectionnez la personne à retirer des présents :", 
+                df_presents_courants["Nom & Prénom"].tolist(),
+                key="select_annulation"
+            )
+            if st.button("❌ Retirer cette personne de la liste des présents", type="secondary"):
+                row_cible = df_session[df_session["Nom & Prénom"] == p_a_annuler].iloc[0]
+                
+                # Si c'est un visiteur (ID >= 9000), on le supprime complètement de la liste
+                if int(row_cible["N°"]) >= 9000:
+                    df_session = df_session[df_session["Nom & Prénom"] != p_a_annuler]
+                else:
+                    # Si c'est un membre de base, on le remet à zéro (Absent, non payé)
+                    df_session.loc[df_session["Nom & Prénom"] == p_a_annuler, ["Présent", "Responsable", "Payé"]] = False
+                
+                st.session_state[f"df_{file_date_str}"] = df_session
+                st.toast(f"🔄 Inscription annulée pour {p_a_annuler}")
+                st.rerun()
+
+    st.write("---")
     df_non_pointes = df_session[df_session["Présent"] == False]
     
     if df_non_pointes.empty:
@@ -216,10 +241,8 @@ with onglet3:
                 
         if liste_df:
             df_global = pd.concat(liste_df, ignore_index=True)
-            # Filtrer pour obtenir l'historique utile
             df_historique_total = df_global[df_global["Présent"] == True].copy()
             
-            # Séparation en 2 sous-onglets pratiques
             sub1, sub2 = st.tabs(["❌ Impayés à régulariser", "📋 Tout l'historique des présences"])
             
             with sub1:
