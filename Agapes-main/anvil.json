@@ -1,0 +1,39 @@
+{
+  "allow_embedding": false,
+  "db_schema": {
+    "membres": {
+      "client": "full",
+      "server": "full",
+      "columns": [
+        {"name": "nom", "type": "string"},
+        {"name": "prenom", "type": "string"},
+        {"name": "statut", "type": "string"},
+        {"name": "email", "type": "string"},
+        {"name": "telephone", "type": "string"}
+      ]
+    },
+    "agapes": {
+      "client": "full",
+      "server": "full",
+      "columns": [
+        {"name": "date", "type": "date"},
+        {"name": "description", "type": "string"},
+        {"name": "tarif", "type": "number"}
+      ]
+    },
+    "presences": {
+      "client": "full",
+      "server": "full",
+      "columns": [
+        {"name": "agape", "type": "link_single", "target": "agapes"},
+        {"name": "membre", "type": "link_single", "target": "membres"},
+        {"name": "present", "type": "bool"},
+        {"name": "montant_du", "type": "number"},
+        {"name": "montant_paye", "type": "number"},
+        {"name": "mode_paiement", "type": "string"},
+        {"name": "date_paiement", "type": "date"}
+      ]
+    }
+  },
+  "startup_form": "Main"
+}
